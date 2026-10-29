@@ -6,11 +6,8 @@ import asyncio
 import base64
 import json
 import logging
-import os
 import secrets
-import tempfile
 from collections.abc import Awaitable, Callable, Mapping
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,7 +17,7 @@ import httpx
 
 from wechat_agent.logging import LOGGER_NAME
 from wechat_agent.security import mask_secret
-from wechat_agent.wechat.cursor import CursorStore
+from wechat_agent.wechat.cursor import CursorStore, atomic_write_text, ensure_private_dir
 from wechat_agent.wechat.models import (
     KNOWN_PART_TYPES,
     MessagePart,
@@ -39,8 +36,6 @@ DEFAULT_CONNECT_TIMEOUT: Final = 10.0
 DEFAULT_READ_TIMEOUT: Final = 40.0
 DEFAULT_QR_POLL_INTERVAL: Final = 2.0
 CREDENTIALS_FILE_NAME: Final = "credentials.json"
-CREDENTIALS_FILE_MODE: Final = 0o600
-PRIVATE_DIR_MODE: Final = 0o700
 MAX_QR_REFRESH: Final = 3
 QR_TERMINAL_STATUSES: Final = frozenset({"confirmed", "expired"})
 SESSION_EXPIRED_CODE: Final = -14
@@ -296,25 +291,11 @@ class ILinkTransport:
             raise TransportError(f"保存凭证失败：{type(error).__name__}") from error
 
     def _write_credentials_atomically(self, credentials: Credentials) -> None:
-        directory = self._credentials_path.parent
-        directory.mkdir(parents=True, exist_ok=True)
-        directory.chmod(PRIVATE_DIR_MODE)
-        descriptor, temp_name = tempfile.mkstemp(
-            prefix=f".{CREDENTIALS_FILE_NAME}.",
-            suffix=".tmp",
-            dir=directory,
+        ensure_private_dir(self._data_dir)
+        atomic_write_text(
+            self._credentials_path,
+            json.dumps(credentials.to_payload(), ensure_ascii=False),
         )
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump(credentials.to_payload(), handle, ensure_ascii=False)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(temp_name, CREDENTIALS_FILE_MODE)
-            os.replace(temp_name, self._credentials_path)
-        except BaseException:
-            with suppress(FileNotFoundError):
-                os.unlink(temp_name)
-            raise
 
     async def _request(
         self,
@@ -408,6 +389,15 @@ def _normalize_messages(value: object) -> tuple[NormalizedMessage, ...]:
 
 def _normalize_message(raw: Mapping[str, Any]) -> NormalizedMessage | None:
     raw_id = raw.get("msg_id") or raw.get("message_id")
+    if raw.get("message_type") in (2, "2"):
+        logger.debug(
+            "跳过 iLink 自身消息",
+            extra={
+                "msg_id": str(raw_id) if raw_id is not None else "",
+                "reason": "message_type=2",
+            },
+        )
+        return None
     from_user_id = raw.get("from_user_id")
     if raw_id is None or raw_id == "" or not isinstance(from_user_id, str) or not from_user_id:
         logger.warning("iLink 消息缺少 id 或发送者，已跳过")

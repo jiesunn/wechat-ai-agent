@@ -1,4 +1,4 @@
-"""游标持久化：原子写 data/cursor.json，进程重启后从上次位置继续。"""
+"""网关层私有文件：原子写工具（临时文件 + fsync + os.replace）与游标持久化。"""
 
 from __future__ import annotations
 
@@ -9,10 +9,36 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Final
 
-CURSOR_FILE_NAME: Final = "cursor.json"
-CURSOR_FILE_MODE: Final = 0o600
 PRIVATE_DIR_MODE: Final = 0o700
-CURSOR_TEMP_PREFIX: Final = ".cursor."
+PRIVATE_FILE_MODE: Final = 0o600
+PRIVATE_TEMP_SUFFIX: Final = ".tmp"
+CURSOR_FILE_NAME: Final = "cursor.json"
+
+
+def ensure_private_dir(directory: Path) -> None:
+    """创建目录并收紧到 0700（mkdir 的 mode 受 umask 影响）。"""
+    directory.mkdir(parents=True, exist_ok=True)
+    directory.chmod(PRIVATE_DIR_MODE)
+
+
+def atomic_write_text(path: Path, text: str, *, mode: int = PRIVATE_FILE_MODE) -> None:
+    """同目录临时文件 + fsync + os.replace；替换前旧文件始终完整。"""
+    descriptor, temp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=PRIVATE_TEMP_SUFFIX,
+        dir=path.parent,
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp_name, mode)
+        os.replace(temp_name, path)
+    except BaseException:
+        with suppress(FileNotFoundError):
+            os.unlink(temp_name)
+        raise
 
 
 class CursorStore:
@@ -37,22 +63,6 @@ class CursorStore:
         return cursor if isinstance(cursor, str) else None
 
     def save(self, cursor: str) -> None:
-        """临时文件 + fsync + os.replace；写坏也不会破坏上一份游标。"""
-        self._data_dir.mkdir(parents=True, exist_ok=True)
-        self._data_dir.chmod(PRIVATE_DIR_MODE)
-        descriptor, temp_name = tempfile.mkstemp(
-            prefix=CURSOR_TEMP_PREFIX,
-            suffix=".tmp",
-            dir=self._data_dir,
-        )
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                json.dump({"cursor": cursor}, handle, ensure_ascii=False)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.chmod(temp_name, CURSOR_FILE_MODE)
-            os.replace(temp_name, self._path)
-        except BaseException:
-            with suppress(FileNotFoundError):
-                os.unlink(temp_name)
-            raise
+        """原子写；写坏也不会破坏上一份游标。"""
+        ensure_private_dir(self._data_dir)
+        atomic_write_text(self._path, json.dumps({"cursor": cursor}, ensure_ascii=False))

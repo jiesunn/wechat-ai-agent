@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import stat
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
@@ -11,9 +12,10 @@ from typing import Any
 import httpx
 import pytest
 import respx
-from pytest import MonkeyPatch
+from pytest import LogCaptureFixture, MonkeyPatch
 
 from wechat_agent.config import Settings, load_settings
+from wechat_agent.logging import LOGGER_NAME
 from wechat_agent.wechat.ilink import (
     BACKOFF_INITIAL_SECONDS,
     BACKOFF_MAX_SECONDS,
@@ -28,6 +30,12 @@ TEXT_MESSAGE: dict[str, Any] = {
     "context_token": "ctx-1",
     "create_time": 1700000000,
     "item_list": [{"type": 1, "text_item": {"text": "你好"}}],
+}
+SELF_MESSAGE: dict[str, Any] = {
+    "message_id": 2002,
+    "from_user_id": "wxid_bot_self",
+    "message_type": 2,
+    "item_list": [{"type": 1, "text_item": {"text": "自己的回复正文"}}],
 }
 
 
@@ -248,6 +256,39 @@ async def test_session_expired_is_not_retried(
     assert delays == []
     assert transport.consecutive_failures == 0
     assert not transport.cursor_path.exists()
+
+
+async def test_self_message_is_filtered_and_logged_without_body(
+    make_transport: Callable[..., ILinkTransport],
+    api: str,
+    respx_mock: respx.Router,
+    caplog: LogCaptureFixture,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging.getLogger(LOGGER_NAME), "propagate", True)
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    transport = make_transport()
+    _getupdates(
+        respx_mock,
+        api,
+        httpx.Response(
+            200,
+            json={
+                "ret": 0,
+                "get_updates_buf": "cursor-1",
+                "msgs": [SELF_MESSAGE, TEXT_MESSAGE],
+            },
+        ),
+    )
+
+    result = await transport.poll(None)
+
+    assert [message.msg_id for message in result.messages] == ["1001"]
+    records = [record for record in caplog.records if "自身消息" in record.getMessage()]
+    assert len(records) == 1
+    assert records[0].msg_id == "2002"
+    assert records[0].reason == "message_type=2"
+    assert "自己的回复正文" not in caplog.text
 
 
 async def test_business_errcode_is_not_retried(
