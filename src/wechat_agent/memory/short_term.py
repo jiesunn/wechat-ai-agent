@@ -40,6 +40,10 @@ class ShortTermMemory:
         """按时间顺序返回窗口快照；首次访问时从磁盘恢复。"""
         return tuple(self._window(contact_id))
 
+    def forget(self, contact_id: str) -> None:
+        """丢弃该联系人的内存窗口；下次访问从磁盘重新加载。"""
+        self._windows.pop(contact_hash(contact_id), None)
+
     def append_user(self, contact_id: str, content: str) -> MemoryEntry:
         """收到用户消息时立即追加，后续生成或发送失败都不丢 user 记录。"""
         return self._append(contact_id, ROLE_USER, content)
