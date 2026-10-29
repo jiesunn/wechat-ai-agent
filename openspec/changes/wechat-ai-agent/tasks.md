@@ -33,7 +33,7 @@
 - [x] 2.4 长轮询接收与游标持久化：调用 `getupdates`，本地读超时视为空轮询并立即用相同游标重试；游标原子写 `data/cursor.json` 并在重启时恢复；连续网络失败按 2s → 30s 指数退避。验证：`respx` + 假时钟测试覆盖「超时不计失败」「重启后使用已存游标」「退避序列 2/4/8…30」。备注：游标在 `getupdates` 成功后先落盘再返回消息（崩溃最多重复最后一批）；`poll(None)` 自动读取已存游标；退避由 `ILinkTransport.poll_with_backoff` 实现并注入 `sleep` 便于假时钟测试；`msgs` 归一化为 `NormalizedMessage`（`item_list` 类型 1–5 映射 text/image/voice/file/video，其余归 `unknown`）。
 - [x] 2.5 去重与自身消息忽略：基于消息 id 的 LRU（内存）+ 近期 id 持久化；`message_type = 2` 的自身消息直接忽略。验证：单测断言重复消息只触发一次处理、自身消息不进入后续管线。备注：去重对象是归一化后的 `msg_id`（`SeenIdStore.is_duplicate`），内存与 `data/seen_ids.json` 均按 LRU 保留最近 1000 条，复用 `cursor.py` 的原子写；自身消息在 `_normalize_message` 过滤，debug 日志仅含 `msg_id` 与原因。
 - [x] 2.6 发送端与文本分片：实现 `sendmessage`（回填 `context_token`、`message_type=2`、`message_state=2`）；超过 2000 字符按段落/句子边界分片并按序发送；某片失败时停止后续；缺少 `context_token` 时跳过并告警。验证：`tests/test_sender.py` 覆盖「4500 字拆 3 条且顺序一致」「缺 token 不发送」「中途失败停止」。备注：`split_text` 以原文连续切片方式按段落 → 句子 → 硬切选切点，拼回等于原文；日志只含 `msg_id`、分片序号、总片数、联系人哈希，不含正文与原始 wxid。
-- [ ] 2.7 接入层集成测试：用 `FakeTransport` + `respx` 串起「扫码登录 → 长轮询 → 归一化 → 去重 → `-14` 重登 → 退避重试」。验证：`pytest tests/gateway/` 全绿，且测试过程无真实网络请求。
+- [x] 2.7 接入层集成测试：用 `FakeTransport` + `respx` 串起「扫码登录 → 长轮询 → 归一化 → 去重 → `-14` 重登 → 退避重试」。验证：`pytest tests/integration/` 全绿，且测试过程无真实网络请求。备注：路径 1/2/3/5/6 用 respx 严格 mock 的 `ILinkTransport`（扫码、凭证、游标、归一化、退避都在适配器内），路径 4 注入 `FakeTransport` 验证端口可替换；未 patch 适配器内部方法。顺带移除 `test_ilink_poll.py` 中对 `propagate` 的 monkeypatch，消除测试顺序依赖。
 
 ## 3. 消息准入与管线编排
 

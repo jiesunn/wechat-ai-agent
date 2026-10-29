@@ -263,9 +263,7 @@ async def test_self_message_is_filtered_and_logged_without_body(
     api: str,
     respx_mock: respx.Router,
     caplog: LogCaptureFixture,
-    monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(logging.getLogger(LOGGER_NAME), "propagate", True)
     caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     transport = make_transport()
     _getupdates(
