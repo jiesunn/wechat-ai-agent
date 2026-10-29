@@ -335,6 +335,12 @@ async def _run(settings: Settings) -> int:
         logger.error("启动失败，无法连接 iLink", extra={"error_type": type(error).__name__})
         return 1
     except Exception as error:  # noqa: BLE001 - 入口兜底，避免把栈直接抛给终端
+        if controller.stop_requested:
+            logger.info(
+                "停机请求期间中断登录或轮询，按正常退出处理",
+                extra={"error_type": type(error).__name__},
+            )
+            return 0
         logger.exception("运行时异常退出", extra={"error_type": type(error).__name__})
         return 1
     finally:

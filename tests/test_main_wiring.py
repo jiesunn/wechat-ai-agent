@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from pytest import MonkeyPatch
 
+import wechat_agent.main as main_module
 from wechat_agent.config import Settings, load_settings
 from wechat_agent.guard.chain import FilterChain
 from wechat_agent.guard.validate import DuplicateSuppressor
 from wechat_agent.guard.whitelist import Whitelist
 from wechat_agent.llm.client import LLMClient
+from wechat_agent.logging import LOGGER_NAME
 from wechat_agent.main import _SummaryClient, _with_admitted_text, build_runtime
 from wechat_agent.memory.summary import SummaryEngine
 from wechat_agent.multimodal.router import ATTACHMENT_NOTICE, MultimodalRouter
@@ -129,3 +135,127 @@ async def test_build_runtime_wires_all_components(
     finally:
         await runtime.transport.close()
         await runtime.client.close()
+
+
+class _RecordingHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@pytest.fixture
+def logs() -> Iterator[list[logging.LogRecord]]:
+    target = logging.getLogger(LOGGER_NAME)
+    handler = _RecordingHandler()
+    previous_level = target.level
+    previous_propagate = target.propagate
+    target.addHandler(handler)
+    target.setLevel(logging.DEBUG)
+    target.propagate = False
+    yield handler.records
+    target.removeHandler(handler)
+    target.setLevel(previous_level)
+    target.propagate = previous_propagate
+
+
+class _FakePipeline:
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+
+    def start(self) -> None:
+        self.started = True
+
+    async def stop(self) -> None:
+        self.stopped = True
+
+
+class _FakeClient:
+    async def close(self) -> None:
+        return
+
+
+class _FakeTransport:
+    def __init__(self, *, stopped: bool, state: dict[str, bool]) -> None:
+        self._stopped = stopped
+        self._state = state
+        self.closed = False
+
+    async def login(self) -> None:
+        if self._stopped:
+            self._state["stopped"] = True
+        raise RuntimeError("Cannot send a request, as the client has been closed.")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def _run_with_login_failure(
+    monkeypatch: MonkeyPatch,
+    settings: Settings,
+    *,
+    stopped: bool,
+) -> int:
+    state = {"stopped": stopped}
+    runtime = SimpleNamespace(
+        transport=_FakeTransport(stopped=stopped, state=state),
+        pipeline=_FakePipeline(),
+        client=_FakeClient(),
+    )
+    monkeypatch.setattr(main_module, "build_runtime", lambda _: runtime)
+
+    class _Controller:
+        def __init__(self, callback: Any) -> None:
+            self._callback = callback
+
+        def install(self) -> None:
+            return
+
+        def uninstall(self) -> None:
+            return
+
+        @property
+        def stop_requested(self) -> bool:
+            return state["stopped"]
+
+        async def wait(self) -> None:
+            return
+
+    monkeypatch.setattr(main_module, "ShutdownController", _Controller)
+    return await main_module._run(settings)
+
+
+async def test_run_returns_zero_when_shutdown_requested_during_login(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    logs: list[logging.LogRecord],
+) -> None:
+    settings = _settings(monkeypatch, tmp_path / "data")
+
+    code = await _run_with_login_failure(monkeypatch, settings, stopped=True)
+
+    assert code == 0
+    stop_records = [record for record in logs if "按正常退出处理" in record.getMessage()]
+    assert len(stop_records) == 1
+    assert stop_records[0].error_type == "RuntimeError"
+    assert stop_records[0].exc_info is None
+    assert all(record.exc_info is None for record in logs)
+
+
+async def test_run_returns_one_for_runtime_error_without_shutdown(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    logs: list[logging.LogRecord],
+) -> None:
+    settings = _settings(monkeypatch, tmp_path / "data")
+
+    code = await _run_with_login_failure(monkeypatch, settings, stopped=False)
+
+    assert code == 1
+    error_records = [record for record in logs if record.getMessage() == "运行时异常退出"]
+    assert len(error_records) == 1
+    assert error_records[0].error_type == "RuntimeError"
+    assert error_records[0].exc_info is not None
