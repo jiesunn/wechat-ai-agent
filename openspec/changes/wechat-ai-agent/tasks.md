@@ -1,11 +1,25 @@
 # Tasks
 
 > 每个任务按「半天以内可完成」拆分；勾选完成前必须跑通该任务声明的验证方式。
-> 提交约定：每完成一个任务提交一次，格式为 Conventional Commits（`type(scope): subject`），详见 8.3。
+
+## 提交约定
+
+每个任务完成即提交一次，格式为 Conventional Commits：`type(scope): subject`。
+
+- type 取值：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `build` / `ci`
+- scope 取值：`gateway` / `guard` / `memory` / `llm` / `multimodal` / `runtime` / `config` / `docs`
+- subject 用中文动宾短语，单条不超过 50 字；纯仓库维护类提交可省略 scope。
+- 测试与所测代码放进同一提交；`tasks.md` 的勾选更新跟随所属任务提交，不单独提交进度。
+- 完整规范与示例见 `docs/commit-convention.md`（任务 0.1 产出）。
+
+## 0. 规范前置
+
+- [ ] 0.1 **提交规范文档（chore(docs)）**：编写 `docs/commit-convention.md`，明确 type（`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `build` / `ci`）、scope（`gateway` / `guard` / `memory` / `llm` / `multimodal` / `runtime` / `config` / `docs`）、subject 写法与示例，并规定「一个任务一次提交」及提交前自查（`make check` + `openspec validate` + 敏感文件扫描）。验证：文档中的 type / scope 与本文件「提交约定」完全一致；对照文档可逐条判定现有 `git log --oneline` 是否合规。
 
 ## 1. 工程骨架与运行时配置
 
-- [ ] 1.1 初始化 Python 3.11 项目：`pyproject.toml`（src layout，包名 `wechat_agent`）、dev 依赖（pytest / pytest-asyncio / respx / ruff）、`.gitignore`（`.env`、`data/`、`.venv/`、缓存）。验证：`pip install -e ".[dev]"` 成功，`python -c "import wechat_agent"` 无报错，`ruff check .` 通过。
+- [ ] 1.1a 初始化项目骨架：`pyproject.toml`（src layout，包名 `wechat_agent`，含最小包占位 `src/wechat_agent/__init__.py`）与 `.gitignore`（`.env`、`data/`、`.venv/`、缓存；已提交则核对覆盖项）。验证：`pip install -e .` 成功。
+- [ ] 1.1b 配置 ruff 与 dev 依赖：在 `pyproject.toml` 中加入 pytest / pytest-asyncio / respx / ruff，并落地 ruff 的 lint 与 format 配置。验证：`pip install -e ".[dev]"` 成功，`ruff check .` 在空项目上通过。
 - [ ] 1.2 **配置与 .env 解耦（独立任务）**：实现 `Settings`（pydantic-settings），覆盖设计文档中的配置表；生成 `.env.example`（仅键名、说明与安全默认值，不含真实密钥）；启动校验必填项与类型，缺失时只输出键名并非零退出；实现密钥脱敏工具。验证：`tests/test_config.py` 覆盖「缺 `LLM_API_KEY` 时报错只含键名」「`ALLOW_FROM` 允许空值」「非法数值类型报错」「脱敏输出不含完整值」四类用例；`pytest -k config` 通过；`grep -rE "sk-|Bearer [A-Za-z0-9]{20,}" src/` 无命中。
 - [ ] 1.3 结构化日志与运行目录：JSON 行日志写 `data/logs/app.log`、stdout 输出人类可读摘要、10MB × 5 滚动、统一脱敏过滤器；创建 `data/`（0700）与 `data/logs/`。验证：`tests/test_logging.py` 断言含 `api_key` / `authorization` 字段的日志被脱敏，且滚动在超过阈值后产生备份文件。
 - [ ] 1.4 单实例锁、信号处理与 DRY_RUN 发送开关：`fcntl.flock` 锁 `data/.lock`；SIGINT/SIGTERM 触发停机回调；发送层支持 `DryRunSender`。验证：单元测试覆盖「第二个实例拿锁失败」「信号触发停机回调」「DRY_RUN 下不调用真实发送」。
@@ -14,7 +28,7 @@
 ## 2. 微信接入层（iLink）
 
 - [ ] 2.1 归一化模型与 Transport 接口：定义 `NormalizedMessage`、`MessagePart`（text / image / voice / file / video / unknown）、`TransportError` / `SessionExpired` 等错误类型，以及 `WeChatTransport`（login / poll / send / close）；实现测试替身 `FakeTransport`。验证：`tests/test_models.py` 断言未知类型落入 `unknown`，缺失可选字段时不抛异常。
-- [ ] 2.2 iLink HTTP 客户端：封装 `ILINK_BASE_URL`、认证头（`AuthorizationType`、`Authorization`、`X-WECHAT-UIN`）、`base_info`、连接与读取超时、错误码映射（`-14` → `SessionExpired`）。验证：`respx` 单测断言请求头与请求体、超时生效、`-14` 映射正确。
+- [ ] 2.2 iLink HTTP 客户端：封装 `ILINK_BASE_URL`、认证头（`AuthorizationType`、`Authorization`、`X-WECHAT-UIN`）、`base_info`、连接与读取超时、错误码映射（`-14` → `SessionExpired`）。验证：`respx` 单测断言请求头与请求体、超时生效、`-14` 映射正确；另用真实 `get_bot_qrcode` 请求确认返回字段名与 `design.md` 的契约表一致，如有差异记录到 `docs/acceptance.md`。
 - [ ] 2.3 二维码登录与会话建立：获取二维码 → 展示可扫描内容 → 轮询状态 → `confirmed` 后原子写 `data/credentials.json`（0600）；`expired` 自动刷新最多 3 次；凭证损坏视为无凭证。验证：`respx` 覆盖「确认后落盘且日志无 token」「连续 3 次过期后退出」「损坏凭证重新登录」三条路径。
 - [ ] 2.4 长轮询接收与游标持久化：调用 `getupdates`，本地读超时视为空轮询并立即用相同游标重试；游标原子写 `data/cursor.json` 并在重启时恢复；连续网络失败按 2s → 30s 指数退避。验证：`respx` + 假时钟测试覆盖「超时不计失败」「重启后使用已存游标」「退避序列 2/4/8…30」。
 - [ ] 2.5 去重与自身消息忽略：基于消息 id 的 LRU（内存）+ 近期 id 持久化；`message_type = 2` 的自身消息直接忽略。验证：单测断言重复消息只触发一次处理、自身消息不进入后续管线。
@@ -58,11 +72,12 @@
 ## 8. 文档、提交规范与交付
 
 - [ ] 8.1 README 编写：包含架构图与模块职责、能力边界、macOS 安装与运行步骤、`.env` 配置表、扫码登录流程、防休眠建议（`caffeinate`）、已知限制（仅被动回复、无群聊、无媒体解析、风控风险）、故障排查。验证：在干净的 macOS 环境严格按 README 从零走到扫码登录成功；文中每条命令可原样执行。
-- [ ] 8.2 演示视频录制说明：`docs/demo-script.md` 写明 5 个演示场景（文本回复、白名单外静默、图片降级、记忆连续性、DRY_RUN 对比）、录制步骤、3–5 分钟的节奏建议、脱敏要求（遮挡二维码、联系人昵称、密钥）、文件命名与存放位置。验证：按该脚本可完整录制一遍，且视频中不出现敏感信息。
-- [ ] 8.3 Conventional Commits 落地：编写 `docs/commit-convention.md`，明确 type（feat / fix / refactor / test / docs / chore / build / ci）、scope（gateway / guard / memory / llm / multimodal / runtime / config / docs）、subject 写法与示例，并规定「一个任务一次提交」及提交前自查（`make check` + `openspec validate` + 敏感文件扫描）。验证：`git log --oneline` 中每个实现提交均符合 `type(scope): subject`，随机抽查 5 条人工确认。
+- [ ] 8.2 演示视频录制说明：`docs/demo-script.md` 写明 5 个演示场景（文本回复、白名单外静默、图片降级、记忆连续性、DRY_RUN 对比）、录制步骤、3–5 分钟的节奏建议、脱敏要求（遮挡二维码、联系人昵称、密钥）、画面要求（必须保留 macOS 菜单栏或终端标题栏，用于证明运行环境是 macOS）、文件命名与存放位置。验证：按该脚本可完整录制一遍，视频中不出现敏感信息，且画面保留 macOS 菜单栏或终端标题栏。
+- [ ] 8.3 提交规范抽查：按 `docs/commit-convention.md`（任务 0.1 产出）核对历史提交。验证：`git log --oneline` 中每个实现提交均符合 `type(scope): subject`，随机抽查 5 条人工确认，结果记录在 `docs/acceptance.md`。
 - [ ] 8.4 最终交付自查：执行 `openspec validate wechat-ai-agent`、`make check`；确认 `git ls-files` 中无 `.env`、`data/`、`credentials.json`；确认 README 内链接与命令有效。验证：三项检查全部通过，结果记录在 `docs/acceptance.md`。
 
 ## Workflow follow-up
 
+- 归档前必须确认：`openspec validate --specs` 通过、`git status` 干净、`data/` 未被 git 跟踪。
 - 按项目 review 要求完成后归档该变更（`/opsx:archive`）。
 - 归档后确认 `openspec/specs/` 下已生成 6 个 capability，且 `openspec validate --specs` 通过。
