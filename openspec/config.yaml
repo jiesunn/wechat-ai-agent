@@ -1,0 +1,34 @@
+schema: spec-driven
+
+context: |
+  项目：个人微信 AI 自动回复 Agent
+  技术栈：Python 3.11+，微信接入层使用官方 iLink 桥接方案（非客户端 Hook）
+  目标平台：macOS（需在设计与任务中优先考虑 macOS 兼容性）
+  配置管理：所有敏感信息（API Key、Token）必须通过 .env 读取，严禁硬编码
+  LLM 接口：OpenAI 兼容格式
+  记忆策略：短期用固定容量 deque，长期用 LLM 摘要存本地
+  语言：中文（简体）
+  所有产出物必须用简体中文撰写，但 Requirement、Scenario、SHALL/MUST、
+  ADDED/MODIFIED/REMOVED 等结构关键字保持英文。
+
+rules:
+  proposal:
+    - 明确列出“不在范围内”的内容（如首版不实现群聊、不实现完整多模态）
+    - 必须包含风险与已知限制章节（如 macOS 下微信接入的客观约束）
+  specs:
+    - 每条需求必须使用 Given/When/Then 格式
+    - 必须包含白名单过滤、垃圾消息过滤的验收场景
+    - 必须包含短期记忆与长期记忆读写验证的场景
+  design:
+    - 必须对比至少两种微信接入方案，并说明在 macOS 上的可行性
+    - 多模态（语音/文件/图片）需给出接口占位设计，并说明后续接入思路
+    - 明确说明如何在不同微信版本下保持稳定（或坦诚说明限制）
+  tasks:
+    - 每个任务粒度不超过半天可完成
+    - 必须包含 .env 配置解耦的独立任务
+    - 必须包含 README 编写与视频录制说明的任务
+
+operations:
+  apply:
+    - 每完成一个 tasks.md 中的任务就提交一次 git commit，使用 Conventional Commits
+    - 涉及微信接入的代码变更前，先确认当前方案在 macOS 上可运行
