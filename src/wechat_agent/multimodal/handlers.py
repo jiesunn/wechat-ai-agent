@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Final, Protocol
 
 from wechat_agent.config import DEFAULT_UNSUPPORTED_MEDIA_REPLY
@@ -11,6 +12,7 @@ from wechat_agent.wechat.models import MessagePart, NormalizedMessage
 
 TEXT_TYPE: Final = "text"
 MEDIA_TYPES: Final = frozenset({"image", "voice", "file", "video", "unknown"})
+DEFAULT_MAX_REPLY_CHARS: Final = 2000
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -25,17 +27,28 @@ class DefaultFallbackHandler:
     """未注册类型与处理器异常的统一回落。
 
     首版不下载媒体、不读文件、不落盘，只按类型与大小回一句降级话术。
+    话术可在构造时按媒体类型覆盖；超过 ``max_chars`` 的话术在构造期截断并告警，
+    避免降级话术本身被发送层分片。
     """
 
-    def __init__(self, reply: str = DEFAULT_UNSUPPORTED_MEDIA_REPLY) -> None:
-        self._reply = reply
+    def __init__(
+        self,
+        reply: str = DEFAULT_UNSUPPORTED_MEDIA_REPLY,
+        *,
+        replies: Mapping[str, str] | None = None,
+        max_chars: int = DEFAULT_MAX_REPLY_CHARS,
+    ) -> None:
+        if max_chars <= 0:
+            raise ValueError("max_chars 必须大于 0")
+        self._default_reply = _fit_reply(reply, max_chars, media_type=None)
+        self._replies = _normalize_replies(replies or {}, max_chars)
 
     def handle(self, part: MessagePart, message: NormalizedMessage) -> str:
         logger.info(
             "媒体消息使用默认降级话术",
             extra={"media_type": part.type, "media_size": part.media_size},
         )
-        return self._reply
+        return self._replies.get(part.type, self._default_reply)
 
 
 class MediaHandlerRegistry:
@@ -87,3 +100,30 @@ class MediaHandlerRegistry:
                 },
             )
             return self._fallback.handle(part, message)
+
+
+def _normalize_replies(replies: Mapping[str, str], max_chars: int) -> dict[str, str]:
+    """归一化话术键并做长度校验；键必须是五类非文本媒体类型。"""
+    normalized: dict[str, str] = {}
+    for media_type, reply in replies.items():
+        key = media_type.strip().lower()
+        if key == TEXT_TYPE:
+            raise ValueError("text 走正常 LLM 链路，不配置多模态话术")
+        if key not in MEDIA_TYPES:
+            raise ValueError(f"未知的媒体类型：{media_type}")
+        normalized[key] = _fit_reply(reply, max_chars, media_type=key)
+    return normalized
+
+
+def _fit_reply(reply: str, max_chars: int, *, media_type: str | None) -> str:
+    if len(reply) <= max_chars:
+        return reply
+    logger.warning(
+        "降级话术超过长度上限，已截断",
+        extra={
+            "media_type": media_type,
+            "original_chars": len(reply),
+            "max_chars": max_chars,
+        },
+    )
+    return reply[:max_chars]

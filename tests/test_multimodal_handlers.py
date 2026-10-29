@@ -10,8 +10,10 @@ import pytest
 import respx
 
 from wechat_agent.config import DEFAULT_UNSUPPORTED_MEDIA_REPLY
+from wechat_agent.llm.client import LLMClient
 from wechat_agent.logging import LOGGER_NAME
 from wechat_agent.multimodal.handlers import (
+    DEFAULT_MAX_REPLY_CHARS,
     MEDIA_TYPES,
     DefaultFallbackHandler,
     MediaHandlerRegistry,
@@ -181,4 +183,88 @@ def test_handling_media_issues_no_network_requests(respx_mock: respx.Router) -> 
     for part in parts:
         registry.handle(part, _message(part))
 
+    assert len(respx_mock.calls) == 0
+
+
+def test_custom_reply_per_type_is_used() -> None:
+    handler = DefaultFallbackHandler(replies={"image": "图片暂时看不了，发文字吧"})
+
+    assert handler.handle(IMAGE, _message(IMAGE)) == "图片暂时看不了，发文字吧"
+    assert handler.handle(VOICE, _message(VOICE)) == DEFAULT_UNSUPPORTED_MEDIA_REPLY
+
+
+@pytest.mark.parametrize(
+    "part",
+    [
+        VOICE,
+        MessagePart(type="file", media_size=1),
+        MessagePart(type="video", media_size=1),
+        MessagePart(type="unknown"),
+    ],
+)
+def test_unconfigured_type_uses_config_default(part: MessagePart) -> None:
+    handler = DefaultFallbackHandler(replies={"image": "图片暂时看不了"})
+
+    assert handler.handle(part, _message(part)) == DEFAULT_UNSUPPORTED_MEDIA_REPLY
+
+
+def test_overlong_reply_is_truncated_with_warning(logs: list[logging.LogRecord]) -> None:
+    custom = "长" * 2500
+    handler = DefaultFallbackHandler(replies={"voice": custom})
+
+    reply = handler.handle(VOICE, _message(VOICE))
+
+    assert reply == custom[:DEFAULT_MAX_REPLY_CHARS]
+    assert DEFAULT_MAX_REPLY_CHARS == 2000
+    warnings = [record for record in logs if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].media_type == "voice"
+    assert warnings[0].original_chars == 2500
+    assert warnings[0].max_chars == 2000
+    rendered = " ".join(f"{record.getMessage()} {record.__dict__}" for record in logs)
+    assert custom not in rendered
+
+
+def test_global_default_reply_is_truncated_too(logs: list[logging.LogRecord]) -> None:
+    handler = DefaultFallbackHandler("长" * 2100)
+
+    assert handler.handle(VOICE, _message(VOICE)) == "长" * DEFAULT_MAX_REPLY_CHARS
+    warnings = [record for record in logs if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert warnings[0].media_type is None
+    assert warnings[0].original_chars == 2100
+
+
+def test_reply_keys_are_normalized() -> None:
+    handler = DefaultFallbackHandler(replies={" Image ": "图片暂时看不了"})
+
+    assert handler.handle(IMAGE, _message(IMAGE)) == "图片暂时看不了"
+
+
+@pytest.mark.parametrize("key", ["text", "audio", ""])
+def test_invalid_reply_key_is_rejected(key: str) -> None:
+    with pytest.raises(ValueError):
+        DefaultFallbackHandler(replies={key: "话术"})
+
+
+def test_max_chars_must_be_positive() -> None:
+    with pytest.raises(ValueError):
+        DefaultFallbackHandler(max_chars=0)
+
+
+def test_default_handler_never_calls_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.Router,
+) -> None:
+    calls: list[object] = []
+
+    async def spy(self: LLMClient, messages: object) -> str:
+        calls.append(messages)
+        return ""
+
+    monkeypatch.setattr(LLMClient, "complete", spy)
+    handler = DefaultFallbackHandler(replies={"image": "图片暂时看不了，发文字吧"})
+
+    assert handler.handle(IMAGE, _message(IMAGE)) == "图片暂时看不了，发文字吧"
+    assert calls == []
     assert len(respx_mock.calls) == 0
