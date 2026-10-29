@@ -14,7 +14,7 @@
 
 ## 0. 规范前置
 
-- [ ] 0.1 **提交规范文档（chore(docs)）**：编写 `docs/commit-convention.md`，明确 type（`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `build` / `ci`）、scope（`gateway` / `guard` / `memory` / `llm` / `multimodal` / `runtime` / `config` / `docs`）、subject 写法与示例，并规定「一个任务一次提交」及提交前自查（`make check` + `openspec validate` + 敏感文件扫描）。验证：文档中的 type / scope 与本文件「提交约定」完全一致；对照文档可逐条判定现有 `git log --oneline` 是否合规。
+- [x] 0.1 **提交规范文档（chore(docs)）**：编写 `docs/commit-convention.md`，明确 type（`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `build` / `ci`）、scope（`gateway` / `guard` / `memory` / `llm` / `multimodal` / `runtime` / `config` / `docs`）、subject 写法与示例，并规定「一个任务一次提交」及提交前自查（`make check` + `openspec validate` + 敏感文件扫描）。验证：文档中的 type / scope 与本文件「提交约定」完全一致；对照文档可逐条判定现有 `git log --oneline` 是否合规。
 
 ## 1. 工程骨架与运行时配置
 
