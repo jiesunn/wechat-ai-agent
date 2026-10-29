@@ -9,18 +9,27 @@ import logging
 import os
 import secrets
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 import httpx
 
 from wechat_agent.logging import LOGGER_NAME
 from wechat_agent.security import mask_secret
-from wechat_agent.wechat.models import SessionExpired, TransportError
+from wechat_agent.wechat.cursor import CursorStore
+from wechat_agent.wechat.models import (
+    KNOWN_PART_TYPES,
+    MessagePart,
+    NormalizedMessage,
+    PartType,
+    PollResult,
+    SessionExpired,
+    TransportError,
+)
 
 API_PREFIX: Final = "/ilink/bot"
 AUTH_TYPE: Final = "ilink_bot_token"
@@ -35,6 +44,15 @@ PRIVATE_DIR_MODE: Final = 0o700
 MAX_QR_REFRESH: Final = 3
 QR_TERMINAL_STATUSES: Final = frozenset({"confirmed", "expired"})
 SESSION_EXPIRED_CODE: Final = -14
+BACKOFF_INITIAL_SECONDS: Final = 2.0
+BACKOFF_MAX_SECONDS: Final = 30.0
+ITEM_TYPE_TO_PART: Final[dict[int, PartType]] = {
+    1: "text",
+    2: "image",
+    3: "voice",
+    4: "file",
+    5: "video",
+}
 
 logger = logging.getLogger(LOGGER_NAME)
 
@@ -62,8 +80,8 @@ class Credentials:
 class ILinkTransport:
     """iLink Bot 的 HTTP 层封装。
 
-    当前提供请求原语、扫码登录与错误翻译；轮询与发送在后续实现中组合
-    这些原语，业务管线始终只接触归一化消息与 TransportError。
+    当前提供请求原语、扫码登录与长轮询；发送在后续实现中组合这些原语，
+    业务管线始终只接触归一化消息与 TransportError。
     """
 
     def __init__(
@@ -78,6 +96,7 @@ class ILinkTransport:
         data_dir: str | Path = "data",
         poll_interval: float = DEFAULT_QR_POLL_INTERVAL,
         qr_display: Callable[[str], None] | None = None,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
@@ -86,8 +105,11 @@ class ILinkTransport:
         self._uin = secrets.randbits(32) if uin is None else uin
         self._data_dir = Path(data_dir)
         self._credentials_path = self._data_dir / CREDENTIALS_FILE_NAME
+        self._cursor_store = CursorStore(self._data_dir)
         self._poll_interval = poll_interval
         self._qr_display = qr_display
+        self._sleep = sleep if sleep is not None else asyncio.sleep
+        self._consecutive_failures = 0
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(
@@ -119,6 +141,14 @@ class ILinkTransport:
     def credentials_path(self) -> Path:
         return self._credentials_path
 
+    @property
+    def cursor_path(self) -> Path:
+        return self._cursor_store.path
+
+    @property
+    def consecutive_failures(self) -> int:
+        return self._consecutive_failures
+
     async def login(self) -> None:
         """复用已存凭证；没有可用凭证时扫码登录，连续 3 次过期则放弃。"""
         credentials = self.load_credentials()
@@ -137,6 +167,48 @@ class ILinkTransport:
         if not isinstance(payload, dict):
             return None
         return _credentials_from_payload(payload)
+
+    async def poll(self, cursor: str | None) -> PollResult:
+        """一次 getupdates：读超时按空轮询返回；成功时立即持久化新游标。"""
+        if cursor is None:
+            cursor = self._cursor_store.load()
+        try:
+            payload = await self.post("getupdates", {"get_updates_buf": cursor or ""})
+        except TransportError as error:
+            if _is_read_timeout(error):
+                logger.debug("iLink 长轮询读超时，视为空轮询")
+                return PollResult(messages=(), cursor=cursor)
+            raise
+        next_cursor = payload.get("get_updates_buf")
+        if isinstance(next_cursor, str) and next_cursor != cursor:
+            # 先落盘再返回消息：崩溃最多重复最后一批，不会丢批
+            self._cursor_store.save(next_cursor)
+            cursor = next_cursor
+        return PollResult(messages=_normalize_messages(payload.get("msgs")), cursor=cursor)
+
+    async def poll_with_backoff(self, cursor: str | None) -> PollResult:
+        """只在可重试的网络错误上退避；SessionExpired 与业务 errcode 直接上抛。"""
+        while True:
+            try:
+                result = await self.poll(cursor)
+            except SessionExpired:
+                raise
+            except TransportError as error:
+                if error.errcode is not None:
+                    raise
+                self._consecutive_failures += 1
+                delay = _backoff_delay(self._consecutive_failures)
+                logger.warning(
+                    "iLink 轮询失败，退避后重试",
+                    extra={
+                        "attempt": self._consecutive_failures,
+                        "delay_seconds": delay,
+                    },
+                )
+                await self._sleep(delay)
+                continue
+            self._consecutive_failures = 0
+            return result
 
     async def get(
         self,
@@ -316,3 +388,90 @@ def _error_code(payload: Mapping[str, Any]) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool) and value != 0:
             return value
     return None
+
+
+def _is_read_timeout(error: TransportError) -> bool:
+    """只有本地读超时算空轮询；连接超时与其他网络错误仍走退避。"""
+    return isinstance(error.__cause__, httpx.ReadTimeout)
+
+
+def _backoff_delay(failures: int) -> float:
+    return min(BACKOFF_INITIAL_SECONDS * (2 ** (failures - 1)), BACKOFF_MAX_SECONDS)
+
+
+def _normalize_messages(value: object) -> tuple[NormalizedMessage, ...]:
+    if not isinstance(value, list):
+        return ()
+    messages = (_normalize_message(item) for item in value if isinstance(item, Mapping))
+    return tuple(message for message in messages if message is not None)
+
+
+def _normalize_message(raw: Mapping[str, Any]) -> NormalizedMessage | None:
+    raw_id = raw.get("msg_id") or raw.get("message_id")
+    from_user_id = raw.get("from_user_id")
+    if raw_id is None or raw_id == "" or not isinstance(from_user_id, str) or not from_user_id:
+        logger.warning("iLink 消息缺少 id 或发送者，已跳过")
+        return None
+    return NormalizedMessage(
+        msg_id=str(raw_id),
+        from_user_id=from_user_id,
+        context_token=_optional_str(raw.get("context_token")),
+        received_at=_received_at(raw.get("create_time")),
+        parts=_parts_from_items(raw.get("item_list")),
+    )
+
+
+def _parts_from_items(value: object) -> tuple[MessagePart, ...]:
+    if not isinstance(value, list):
+        return ()
+    parts: list[MessagePart] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        part_type = _item_part_type(item.get("type"))
+        text = None
+        if part_type == "text":
+            text_item = item.get("text_item")
+            if isinstance(text_item, Mapping):
+                text = _optional_str(text_item.get("text"))
+        parts.append(MessagePart(type=part_type, text=text, media_size=_media_size(item)))
+    return tuple(parts)
+
+
+def _item_part_type(value: object) -> PartType:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return ITEM_TYPE_TO_PART.get(value, "unknown")
+    if isinstance(value, str) and value.strip().lower() in KNOWN_PART_TYPES:
+        return cast(PartType, value.strip().lower())
+    return "unknown"
+
+
+def _media_size(item: Mapping[str, Any]) -> int | None:
+    for key in ("media_size", "file_size"):
+        value = item.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    for item_key in ("image_item", "voice_item", "file_item", "video_item"):
+        nested = item.get(item_key)
+        if not isinstance(nested, Mapping):
+            continue
+        for key in ("media_size", "file_size"):
+            value = nested.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+        media = nested.get("media")
+        if isinstance(media, Mapping):
+            value = media.get("file_size")
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+    return None
+
+
+def _received_at(value: object) -> datetime:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds = value / 1000 if value > 10**11 else value
+        try:
+            return datetime.fromtimestamp(seconds, UTC)
+        except (OverflowError, OSError, ValueError):
+            pass
+    return datetime.now(UTC)
