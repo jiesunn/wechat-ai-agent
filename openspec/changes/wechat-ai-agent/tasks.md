@@ -65,7 +65,7 @@
 
 ## 7. 集成与真机验收
 
-- [ ] 7.1 端到端集成测试：假 iLink + 假 LLM 串起「文本闭环 / 白名单外静默 / 重复抑制 / 图片降级 / 重启恢复游标与记忆 / LLM 超时兜底」六条主路径。验证：`pytest tests/integration/` 全绿，测试内无真实网络访问（respx 未匹配请求即失败）。
+- [x] 7.1 端到端集成测试：假 iLink + 假 LLM 串起「文本闭环 / 白名单外静默 / 重复抑制 / 图片降级 / 重启恢复游标与记忆 / LLM 超时兜底」六条主路径。验证：`pytest tests/integration/` 全绿，测试内无真实网络访问（respx 未匹配请求即失败）。备注：`tests/integration/test_end_to_end.py` 在不改 2.x–6.x 生产代码的前提下完成组合接线：入站路径 1–4、6 用 `FakeTransport`，路径 5 用真实 `ILinkTransport` 并由 respx mock `getupdates`；出站用记录型发送端口，外包一层 `_MemorySender` 在发送成功后写 assistant；文本链路按「`ShortTermMemory.append_user` → `build_reply_messages` → `LLMClient.complete` → `generate_reply`」接在 `MultimodalRouter` 的 `generate_text_reply` 上；纯媒体由实现 3.3 async `MediaHandler` 端口的测试适配器转交 6.3 router，再走 6.2 默认话术并由发送端口发出。LLM 全部使用真实客户端、HTTP 由 respx 接管，`sleep` 注入空实现；路径 6 连续两次 429 触发 5.1 重试耗尽 → 5.4 兜底。每个测试用 tmp_path 独立 data 目录，respx 默认 `assert_all_mocked`。六条路径各自独立：`test_text_loop_end_to_end` / `test_whitelist_rejection_silent` / `test_duplicate_msg_id_is_skipped` / `test_image_falls_back_without_llm` / `test_restart_restores_cursor_and_memory` / `test_llm_timeout_uses_fallback`；整文件单跑与逐条单跑均通过。`multimodal/__init__.py` 补齐 `MultimodalRouter` 导出。图文混发的路由细节已在 6.3 单测覆盖，本文件聚焦六条端到端主路径。
 - [ ] 7.2 真机手工验收：真实扫码登录，用个人小号发送文本与图片；先 `DRY_RUN=true` 对照拟发送内容，再关闭并确认实际收到回复。验证：`docs/acceptance.md` 中的验收清单全部勾选，附脱敏截图与时间戳。
 - [ ] 7.3 稳定性与异常演练：断网 1 分钟、模拟 `-14`、SIGTERM 停机、重复启动、macOS 休眠后恢复各执行一次。验证：演练记录写入 `docs/acceptance.md`，进程均按设计恢复或退出，且游标/记忆无丢失。
 
