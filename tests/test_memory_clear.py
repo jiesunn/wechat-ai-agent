@@ -95,9 +95,7 @@ def test_clear_log_contains_no_memory_content(
     assert "已清空联系人记忆" in caplog.text
     assert SENSITIVE not in caplog.text
     assert CONTACT_A not in caplog.text
-    records = [
-        record for record in caplog.records if record.getMessage() == "已清空联系人记忆"
-    ]
+    records = [record for record in caplog.records if record.getMessage() == "已清空联系人记忆"]
     assert len(records) == 1
     assert records[0].contact_hash == contact_hash(CONTACT_A)
     assert records[0].file_removed is True
