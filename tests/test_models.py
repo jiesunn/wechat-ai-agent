@@ -15,7 +15,7 @@ from wechat_agent.wechat.models import (
     TransportError,
     normalize_part_type,
 )
-from wechat_agent.wechat.transport import WeChatTransport
+from wechat_agent.wechat.transport import WeChatReceiver
 
 
 def test_unknown_part_type_falls_back_to_unknown() -> None:
@@ -80,7 +80,7 @@ def test_session_expired_is_caught_as_transport_error() -> None:
 
 
 def test_fake_transport_satisfies_protocol() -> None:
-    assert isinstance(FakeTransport(), WeChatTransport)
+    assert isinstance(FakeTransport(), WeChatReceiver)
 
 
 async def test_fake_transport_delivers_queued_messages_and_advances_cursor() -> None:

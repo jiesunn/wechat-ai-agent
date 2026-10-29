@@ -11,6 +11,7 @@ from typing import Any, Final, Protocol
 from wechat_agent.logging import LOGGER_NAME
 from wechat_agent.wechat.models import TransportError
 from wechat_agent.wechat.splitter import DEFAULT_LIMIT, split_text
+from wechat_agent.wechat.transport import WeChatSender
 
 SEND_MESSAGE_PATH: Final = "sendmessage"
 BOT_MESSAGE_TYPE: Final = 2
@@ -32,7 +33,7 @@ def contact_hash(contact_id: str) -> str:
     return hashlib.sha256(contact_id.encode("utf-8")).hexdigest()[:CONTACT_HASH_LENGTH]
 
 
-class ILinkSender:
+class ILinkSender(WeChatSender):
     def __init__(self, transport: SendMessageTransport, *, limit: int = DEFAULT_LIMIT) -> None:
         self._transport = transport
         self._limit = limit

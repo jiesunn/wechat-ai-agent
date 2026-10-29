@@ -6,6 +6,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from wechat_agent.wechat.models import NormalizedMessage, PollResult, TransportError
+from wechat_agent.wechat.transport import WeChatReceiver
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -17,8 +18,8 @@ class SentMessage:
     text: str
 
 
-class FakeTransport:
-    """内存版 WeChatTransport：不触达网络，入站与故障均可编排。"""
+class FakeTransport(WeChatReceiver):
+    """内存版 WeChatReceiver：不触达网络，入站与故障均可编排。"""
 
     def __init__(self) -> None:
         self.inbox: deque[NormalizedMessage] = deque()

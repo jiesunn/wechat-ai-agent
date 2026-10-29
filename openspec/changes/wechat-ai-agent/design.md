@@ -66,17 +66,17 @@ iLink 侧关键契约：
 1. **唯一同时满足「官方通道 + macOS 原生 + 零客户端依赖 + 零授权成本」**的方案。B 需要付费且依赖第三方，C 依赖客户端版本，D 改变产品形态，E 太脆，F/G 不可行。
 2. **能力边界与首版范围天然吻合**：只做单聊、只做被动回复，正好是 iLink 的设计用途；反过来，这也是需要坦诚说明的限制。
 3. **运维面最小**：没有 Node 运行时、没有扫码以外的常驻进程、没有公开端口，macOS 上 `python -m` 即可运行。
-4. **可替换**：接入层通过 `WeChatTransport` 接口隔离，若未来需要群聊或商用合规，可切到 B 或 D 而不动业务管线。
+4. **可替换**：接入层通过 `WeChatReceiver` / `WeChatSender` 两个端口隔离，若未来需要群聊或商用合规，可切到 B 或 D 而不动业务管线。
 
 选择 A 的代价：失去群聊和主动触达；稳定性押在腾讯侧接口契约上；个人号自动化仍有风控风险。这些写入风险清单与 README。
 
-### D2. 接入层抽象：Transport 接口 + 适配器
+### D2. 接入层抽象：接收/发送端口 + 适配器
 
-- 定义 `WeChatTransport` 接口：`login()`、`poll(cursor)`、`send(message_id, context_token, text)`、`close()`。
-- `ILinkTransport` 是唯一实现，负责请求头、`base_info`、字段映射、错误码翻译（`-14` → `SessionExpired`）。
+- 定义两个端口：`WeChatReceiver`（`login()` / `poll(cursor)` / `close()`）与 `WeChatSender`（`send_text(contact_id, text, *, context_token, msg_id)`）。接收端管登录态、长轮询与游标；发送端管 `context_token` 回填与文本分片。
+- `ILinkTransport` 实现 `WeChatReceiver`，负责请求头、`base_info`、字段映射、错误码翻译（`-14` → `SessionExpired`）；`ILinkSender` 实现 `WeChatSender`。
 - 上层只处理**归一化消息**：`{msg_id, from_user_id, context_token, parts[], received_at}`。
 - 错误统一用 `TransportError`，并携带可选 `errcode`（仅适配层填写；网络、超时与 HTTP 错误留空），供上层区分可重试与不可重试；不定义 `ILinkError` 子类——子类会迫使上层 `except` iLink 专有类型，把通道细节反向泄漏到业务管线。
-- 好处：测试用 `FakeTransport` 注入；未来换 B/C/D 只新增适配器；iLink 字段变化收敛在一个文件内。
+- 好处：测试用 `FakeTransport`（实现 `WeChatReceiver`）注入；未来换 B/C/D 只新增适配器；iLink 字段变化收敛在一个文件内。
 
 ### D3. 进程模型：单进程 asyncio + 有界队列 + 每联系人串行
 

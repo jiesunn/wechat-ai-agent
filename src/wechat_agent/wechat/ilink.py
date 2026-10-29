@@ -27,6 +27,7 @@ from wechat_agent.wechat.models import (
     SessionExpired,
     TransportError,
 )
+from wechat_agent.wechat.transport import WeChatReceiver
 
 API_PREFIX: Final = "/ilink/bot"
 AUTH_TYPE: Final = "ilink_bot_token"
@@ -72,10 +73,10 @@ class Credentials:
         return payload
 
 
-class ILinkTransport:
+class ILinkTransport(WeChatReceiver):
     """iLink Bot 的 HTTP 层封装。
 
-    当前提供请求原语、扫码登录与长轮询；发送在后续实现中组合这些原语，
+    当前提供请求原语、扫码登录与长轮询；发送由 ILinkSender 组合 `post` 原语完成，
     业务管线始终只接触归一化消息与 TransportError。
     """
 
