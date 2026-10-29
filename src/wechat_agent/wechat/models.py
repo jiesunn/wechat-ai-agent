@@ -60,7 +60,14 @@ class PollResult:
 
 
 class TransportError(Exception):
-    """接入层统一错误：网络失败、协议错误与远端拒绝都归到这里。"""
+    """接入层统一错误：网络失败、协议错误与远端拒绝都归到这里。
+
+    errcode 只由适配层填写（iLink 的非零错误码），不进入归一化消息与业务管线。
+    """
+
+    def __init__(self, message: str = "", *, errcode: int | None = None) -> None:
+        super().__init__(message)
+        self.errcode = errcode
 
 
 class SessionExpired(TransportError):

@@ -90,7 +90,7 @@ BREAKING CHANGE: <影响与迁移方式>
 1. 暂存区核对：`git diff --cached --name-only` 只包含本次任务涉及的文件，禁止 `git add -A`。
 2. 质量门：`make check`（1.5 就绪后）；此前至少跑 `ruff check .` 与相关 `pytest`。
 3. 规格校验：`openspec validate wechat-ai-agent` 通过。
-4. 敏感文件扫描：`git status --short` 中不出现 `.env`、`data/`；`git ls-files | grep -E '^(\.env|data/|.*credentials\.json)'` 无输出。
+4. 敏感文件扫描：`git status --short` 中不出现 `.env`、`data/`；`git ls-files | grep -xE '\.env|data/.*|credentials\.json'` 无输出。
 5. 提交信息核对：符合 `type(scope): subject`。
 
 ## 9. 示例
