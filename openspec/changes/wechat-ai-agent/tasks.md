@@ -18,7 +18,7 @@
 
 ## 1. 工程骨架与运行时配置
 
-- [ ] 1.1a 初始化项目骨架：`pyproject.toml`（src layout，包名 `wechat_agent`，含最小包占位 `src/wechat_agent/__init__.py`）与 `.gitignore`（`.env`、`data/`、`.venv/`、缓存；已提交则核对覆盖项）。验证：`pip install -e .` 成功。
+- [x] 1.1a 初始化项目骨架：`pyproject.toml`（src layout，包名 `wechat_agent`，含最小包占位 `src/wechat_agent/__init__.py`）与 `.gitignore`（`.env`、`data/`、`.venv/`、缓存；已提交则核对覆盖项）。验证：`pip install -e .` 成功。
 - [ ] 1.1b 配置 ruff 与 dev 依赖：在 `pyproject.toml` 中加入 pytest / pytest-asyncio / respx / ruff，并落地 ruff 的 lint 与 format 配置。验证：`pip install -e ".[dev]"` 成功，`ruff check .` 在空项目上通过。
 - [ ] 1.2 **配置与 .env 解耦（独立任务）**：实现 `Settings`（pydantic-settings），覆盖设计文档中的配置表；生成 `.env.example`（仅键名、说明与安全默认值，不含真实密钥）；启动校验必填项与类型，缺失时只输出键名并非零退出；实现密钥脱敏工具。验证：`tests/test_config.py` 覆盖「缺 `LLM_API_KEY` 时报错只含键名」「`ALLOW_FROM` 允许空值」「非法数值类型报错」「脱敏输出不含完整值」四类用例；`pytest -k config` 通过；`grep -rE "sk-|Bearer [A-Za-z0-9]{20,}" src/` 无命中。
 - [ ] 1.3 结构化日志与运行目录：JSON 行日志写 `data/logs/app.log`、stdout 输出人类可读摘要、10MB × 5 滚动、统一脱敏过滤器；创建 `data/`（0700）与 `data/logs/`。验证：`tests/test_logging.py` 断言含 `api_key` / `authorization` 字段的日志被脱敏，且滚动在超过阈值后产生备份文件。
