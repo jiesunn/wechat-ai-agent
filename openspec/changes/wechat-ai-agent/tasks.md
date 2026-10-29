@@ -52,7 +52,7 @@
 
 ## 5. 回复生成
 
-- [ ] 5.1 OpenAI 兼容客户端：调用 `{LLM_BASE_URL}/chat/completions`；连接 10 秒、读取 30 秒超时；429/5xx/网络错误重试 1 次，4xx 不重试；错误分类为可重试/不可重试。验证：`respx` 单测覆盖超时、429 重试成功、400 不重试、重试次数上限。
+- [x] 5.1 OpenAI 兼容客户端：调用 `{LLM_BASE_URL}/chat/completions`；连接 10 秒、读取 30 秒超时；429/5xx/网络错误重试 1 次，4xx 不重试；错误分类为可重试/不可重试。验证：`respx` 单测覆盖超时、429 重试成功、400 不重试、重试次数上限。备注：`wechat_agent/llm/client.py` 的 `LLMClient(base_url, api_key, model)` 由构造函数注入凭据与模型，不读环境变量；`httpx.Timeout` 四维显式设置（connect/write/pool=10、read=30），未用单参数简写。重试只针对 429 / 5xx / `httpx.HTTPError`（含各类超时与连接错误），默认 `max_retries=1`（共 2 次尝试），退避为 `0.5 * 2^(n-1)`（上限 8 秒）× [1, 1.5] jitter，`sleep` 可注入便于测试；其余 4xx 与 3xx 直接失败。`RetryableLLMError` 继承 `LLMError` 并携带 `status_code` 与 `attempts`，重试耗尽时抛前者。响应解析宽松：`content` 缺失或 `None` 返回空字符串交由 5.4 判定空输出，`choices`/`message` 结构缺失、`content` 非字符串、响应非 JSON 一律 `LLMError`，不会冒泡 `KeyError`；多 choice 取第一个。日志只含 `model` / `status_code` / `elapsed_ms` / `attempt` / `retryable`，不含 api_key 与请求正文。17 条用例覆盖四维超时、请求契约、读超时重试、429 重试成功、400 不重试、503 重试上限、四类宽松解析、非法 JSON、空 messages 与日志脱敏。
 - [ ] 5.2 人设与请求组装：system = 人设 + 长期摘要；随后按序放历史 user/assistant；当前消息作为独立 user。自定义 `SYSTEM_PROMPT` 生效，未配置时使用默认人设。验证：单测断言「用户文本不出现在 system 字段」「自定义人设出现在请求中」「缺省人设可用」。
 - [ ] 5.3 提示注入防护：用户文本中的「忽略以上指令」「系统标签」等内容不得改写 system 结构；回复不泄露人设提示。验证：单测断言请求体结构与 system 内容不变；补充一条需要人工复核的验收用例到 `docs/acceptance.md`。
 - [ ] 5.4 降级与输出后处理：超时/失败/空输出 → 兜底话术或静默；输出 strip 与控制字符清理；超过 2000 字符交给分片；处理后为空按失败处理。验证：单测覆盖「超时发兜底」「空输出视失败」「关闭兜底则静默」「超长输出触发分片」四个分支。
