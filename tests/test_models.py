@@ -98,17 +98,6 @@ async def test_fake_transport_delivers_queued_messages_and_advances_cursor() -> 
     assert transport.poll_count == 2
 
 
-async def test_fake_transport_records_sent_message() -> None:
-    transport = FakeTransport()
-
-    await transport.send("msg-1", "ctx-1", "收到")
-
-    assert len(transport.sent) == 1
-    assert transport.sent[0].message_id == "msg-1"
-    assert transport.sent[0].context_token == "ctx-1"
-    assert transport.sent[0].text == "收到"
-
-
 async def test_fake_transport_raises_injected_poll_error_once() -> None:
     transport = FakeTransport()
     transport.fail_next_poll(SessionExpired("errcode -14"))
@@ -117,16 +106,6 @@ async def test_fake_transport_raises_injected_poll_error_once() -> None:
         await transport.poll(None)
 
     assert (await transport.poll(None)).messages == ()
-
-
-async def test_fake_transport_raises_injected_send_error() -> None:
-    transport = FakeTransport()
-    transport.send_error = TransportError("发送失败")
-
-    with pytest.raises(TransportError):
-        await transport.send("msg-1", "ctx-1", "收到")
-
-    assert len(transport.sent) == 1
 
 
 async def test_fake_transport_records_login_and_close() -> None:

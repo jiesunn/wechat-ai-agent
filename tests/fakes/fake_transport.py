@@ -1,21 +1,11 @@
-"""测试替身：用队列投递入站消息、记录出站发送，并可注入传输错误。"""
+"""测试替身：用队列投递入站消息，并可注入传输错误。"""
 
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
 
 from wechat_agent.wechat.models import NormalizedMessage, PollResult, TransportError
 from wechat_agent.wechat.transport import WeChatReceiver
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SentMessage:
-    """一次发送调用的记录，便于断言目标、凭据与正文。"""
-
-    message_id: str
-    context_token: str | None
-    text: str
 
 
 class FakeTransport(WeChatReceiver):
@@ -23,9 +13,7 @@ class FakeTransport(WeChatReceiver):
 
     def __init__(self) -> None:
         self.inbox: deque[NormalizedMessage] = deque()
-        self.sent: list[SentMessage] = []
         self.poll_errors: deque[TransportError] = deque()
-        self.send_error: TransportError | None = None
         self.login_count = 0
         self.poll_count = 0
         self.last_cursor: str | None = None
@@ -54,12 +42,6 @@ class FakeTransport(WeChatReceiver):
         self.inbox.clear()
         self._cursor_seq += 1
         return PollResult(messages=messages, cursor=f"cursor-{self._cursor_seq}")
-
-    async def send(self, message_id: str, context_token: str | None, text: str) -> None:
-        # 先记录再抛错：失败用例也能断言尝试发送的内容
-        self.sent.append(SentMessage(message_id=message_id, context_token=context_token, text=text))
-        if self.send_error is not None:
-            raise self.send_error
 
     async def close(self) -> None:
         self.closed = True
