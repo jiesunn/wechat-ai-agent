@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "个人微信 AI 自动回复 Agent"
 requires-python = ">=3.11"
 dependencies = [
+    "httpx",
     "pydantic-settings",
 ]
 

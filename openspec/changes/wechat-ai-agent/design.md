@@ -75,6 +75,7 @@ iLink 侧关键契约：
 - 定义 `WeChatTransport` 接口：`login()`、`poll(cursor)`、`send(message_id, context_token, text)`、`close()`。
 - `ILinkTransport` 是唯一实现，负责请求头、`base_info`、字段映射、错误码翻译（`-14` → `SessionExpired`）。
 - 上层只处理**归一化消息**：`{msg_id, from_user_id, context_token, parts[], received_at}`。
+- 错误统一用 `TransportError`，并携带可选 `errcode`（仅适配层填写；网络、超时与 HTTP 错误留空），供上层区分可重试与不可重试；不定义 `ILinkError` 子类——子类会迫使上层 `except` iLink 专有类型，把通道细节反向泄漏到业务管线。
 - 好处：测试用 `FakeTransport` 注入；未来换 B/C/D 只新增适配器；iLink 字段变化收敛在一个文件内。
 
 ### D3. 进程模型：单进程 asyncio + 有界队列 + 每联系人串行
