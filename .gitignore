@@ -1,0 +1,51 @@
+# ---- Python 字节码与构建产物 ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+env/
+
+# ---- 测试、静态检查与覆盖率缓存 ----
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ---- 本地配置与密钥（严禁提交，模板 .env.example 例外）----
+.env
+.env.*
+!.env.example
+
+# ---- 运行态数据：扫码凭证 / 游标 / 单实例锁 / 日志 / 记忆 ----
+# DATA_DIR 默认 data/；此处额外冗余匹配，防止自定义目录时误提交
+data/
+credentials.json
+cursor.json
+*.corrupt
+*.log
+
+# ---- macOS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# ---- 编辑器 ----
+.idea/
+.vscode/
+*.swp
+*.swo
