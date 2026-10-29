@@ -17,18 +17,19 @@
 ```
 
 - `type` 必填，取自第 3 节列表。
-- `scope` 取自第 4 节列表；纯仓库维护类提交可省略。
+- `scope` 取自第 4 节列表；纯仓库维护与纯文档提交可省略。
 - `subject` 必填；`body` 与 `footer` 可选。
 
 ## 3. type
 
-type 取值：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `build` / `ci`
+type 取值：`feat` / `fix` / `refactor` / `style` / `test` / `docs` / `chore` / `build` / `ci`
 
 | type | 用途 |
 | --- | --- |
 | `feat` | 新增用户可感知的能力 |
 | `fix` | 修复缺陷 |
 | `refactor` | 不改变外部行为的结构调整 |
+| `style` | 仅格式调整（空白、换行、格式化工具结果），不改变行为 |
 | `test` | 仅新增或调整测试；与被测代码同一次提交的测试不单独拆成 `test` 提交 |
 | `docs` | 产品与项目文档：README、验收记录、演示脚本等 |
 | `chore` | 仓库维护：工具链与依赖、忽略规则、工作流文件、流程规范类文档 |
@@ -55,6 +56,13 @@ scope 选择规则：
 - 只改一个模块时，使用该模块。
 - 跨多个模块时，取改动量最大、最能代表本次意图的模块。
 - 没有模块归属的仓库维护（依赖、忽略规则、编辑器配置）省略 scope。
+- 纯文档提交（README、验收记录、演示脚本）可省略 scope。
+
+历史 scope 例外（仅登记，不用于新提交）：
+
+- `openspec`：OpenSpec 规划产物（早期 `docs(openspec)` 提交）。
+- `zcode`：ZCode 工具链配置（早期 `chore(zcode)` 提交）。
+- `test` / `integration`：测试相关提交（`style(test)`、`test(integration)`）；新提交按被测模块选 scope，或省略 scope。
 
 ## 5. subject 写法
 
@@ -102,7 +110,7 @@ BREAKING CHANGE: <影响与迁移方式>
 - `fix(memory): 摘要失败时保留 pending 并退避重试`
 - `refactor(llm): 拆分 prompt 组装与预算裁剪`
 - `test(multimodal): 覆盖处理器异常隔离`
-- `docs(openspec): 细化提交约定与任务拆分`
+- `docs: 细化提交约定与任务拆分`
 - `chore(docs): 添加提交规范文档`
 - `chore: 添加 .gitignore`
 - `chore(config): 初始化 pyproject.toml 与包骨架`

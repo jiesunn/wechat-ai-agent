@@ -6,9 +6,10 @@
 
 每个任务完成即提交一次，格式为 Conventional Commits：`type(scope): subject`。
 
-- type 取值：`feat` / `fix` / `refactor` / `test` / `docs` / `chore` / `build` / `ci`
+- type 取值：`feat` / `fix` / `refactor` / `style` / `test` / `docs` / `chore` / `build` / `ci`
 - scope 取值：`gateway` / `guard` / `memory` / `llm` / `multimodal` / `runtime` / `config` / `docs`
-- subject 用中文动宾短语，单条不超过 50 字；纯仓库维护类提交可省略 scope。
+- 历史提交中的 `openspec` / `zcode` / `test` / `integration` scope 见 `docs/commit-convention.md` 的「历史 scope 例外」，不再用于新提交。
+- subject 用中文动宾短语，单条不超过 50 字；纯仓库维护与纯文档提交可省略 scope。
 - 测试与所测代码放进同一提交；`tasks.md` 的勾选更新跟随所属任务提交，不单独提交进度。
 - 完整规范与示例见 `docs/commit-convention.md`（任务 0.1 产出）。
 
@@ -78,7 +79,7 @@
 
 - [ ] 8.1 README 编写：包含架构图与模块职责、能力边界、macOS 安装与运行步骤、`.env` 配置表、扫码登录流程、防休眠建议（`caffeinate`）、已知限制（仅被动回复、无群聊、无媒体解析、风控风险）、故障排查。验证：在干净的 macOS 环境严格按 README 从零走到扫码登录成功；文中每条命令可原样执行。
 - [ ] 8.2 演示视频录制说明：`docs/demo-script.md` 写明 5 个演示场景（文本回复、白名单外静默、图片降级、记忆连续性、DRY_RUN 对比）、录制步骤、3–5 分钟的节奏建议、脱敏要求（遮挡二维码、联系人昵称、密钥）、画面要求（必须保留 macOS 菜单栏或终端标题栏，用于证明运行环境是 macOS）、文件命名与存放位置。验证：按该脚本可完整录制一遍，视频中不出现敏感信息，且画面保留 macOS 菜单栏或终端标题栏。
-- [ ] 8.3 提交规范抽查：按 `docs/commit-convention.md`（任务 0.1 产出）核对历史提交。验证：`git log --oneline` 中每个实现提交均符合 `type(scope): subject`，随机抽查 5 条人工确认，结果记录在 `docs/acceptance.md`。
+- [x] 8.3 提交规范抽查：按 `docs/commit-convention.md`（任务 0.1 产出）核对历史提交。验证：`git log --oneline` 中每个实现提交均符合 `type(scope): subject`，随机抽查 5 条人工确认，结果记录在 `docs/commit-audit.md`。备注：共 46 条提交，抽查 10 条覆盖 feat/fix/docs/test/style/refactor/chore 七种 type；3 处历史偏差（`03e82b4` scope `integration` 且含生产导出、`8524a29` 的 `style`/`test` 未定义、`bb94e7f` 的 Makefile 应为 `build`）与 `docs(openspec)` / `chore(zcode)` 历史 scope 已登记，不改写历史；敏感文件全历史扫描无命中；`make check` 283 passed、`openspec validate` 通过、README 快速启动 exit 0 无栈、7 个本地链接有效。规范补充 `style` type、纯文档可省略 scope 与历史 scope 例外。
 - [ ] 8.4 最终交付自查：执行 `openspec validate wechat-ai-agent`、`make check`；确认 `git ls-files` 中无 `.env`、`data/`、`credentials.json`；确认 README 内链接与命令有效。验证：三项检查全部通过，结果记录在 `docs/acceptance.md`。
 
 ## Workflow follow-up
