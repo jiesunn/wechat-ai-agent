@@ -27,7 +27,7 @@
 
 ## 2. 微信接入层（iLink）
 
-- [ ] 2.1 归一化模型与 Transport 接口：定义 `NormalizedMessage`、`MessagePart`（text / image / voice / file / video / unknown）、`TransportError` / `SessionExpired` 等错误类型，以及 `WeChatTransport`（login / poll / send / close）；实现测试替身 `FakeTransport`。验证：`tests/test_models.py` 断言未知类型落入 `unknown`，缺失可选字段时不抛异常。
+- [x] 2.1 归一化模型与 Transport 接口：定义 `NormalizedMessage`、`MessagePart`（text / image / voice / file / video / unknown）、`TransportError` / `SessionExpired` 等错误类型，以及 `WeChatTransport`（login / poll / send / close）；实现测试替身 `FakeTransport`。验证：`tests/test_models.py` 断言未知类型落入 `unknown`，缺失可选字段时不抛异常。
 - [ ] 2.2 iLink HTTP 客户端：封装 `ILINK_BASE_URL`、认证头（`AuthorizationType`、`Authorization`、`X-WECHAT-UIN`）、`base_info`、连接与读取超时、错误码映射（`-14` → `SessionExpired`）。验证：`respx` 单测断言请求头与请求体、超时生效、`-14` 映射正确；另用真实 `get_bot_qrcode` 请求确认返回字段名与 `design.md` 的契约表一致，如有差异记录到 `docs/acceptance.md`。
 - [ ] 2.3 二维码登录与会话建立：获取二维码 → 展示可扫描内容 → 轮询状态 → `confirmed` 后原子写 `data/credentials.json`（0600）；`expired` 自动刷新最多 3 次；凭证损坏视为无凭证。验证：`respx` 覆盖「确认后落盘且日志无 token」「连续 3 次过期后退出」「损坏凭证重新登录」三条路径。
 - [ ] 2.4 长轮询接收与游标持久化：调用 `getupdates`，本地读超时视为空轮询并立即用相同游标重试；游标原子写 `data/cursor.json` 并在重启时恢复；连续网络失败按 2s → 30s 指数退避。验证：`respx` + 假时钟测试覆盖「超时不计失败」「重启后使用已存游标」「退避序列 2/4/8…30」。
